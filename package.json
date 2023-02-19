@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "concordia": "^12.5.5",
+    "discord.js-selfbot-v13": "^2.10.5",
+    "fastest-levenshtein": "^1.0.16",
+    "jsonfile": "^6.1.0"
+  }
+}
