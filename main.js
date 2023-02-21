@@ -4,10 +4,31 @@ const config = require("./config-bot.json");
 const { readFileSync, writeFileSync } = require("jsonfile");
 const { compareTwoStrings } = require("string-similarity");
 const { statSync } = require("node:fs");
+const SexDB = require("./lib");
+let db = new SexDB("ws://127.0.0.1:9001");
 let data = readFileSync("./data.json")["data"];
+let states = ["connecting", "open", "closing", "closed"];
+
+function shuffle(array) {
+  let currentIndex = array.length,  randomIndex;
+
+  // While there remain elements to shuffle.
+  while (currentIndex != 0) {
+
+    // Pick a remaining element.
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+
+    // And swap it with the current element.
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex], array[currentIndex]];
+  }
+
+  return array;
+}
 
 setInterval(() => {
-  data = readFileSync("./data.json")["data"];
+  data = shuffle(readFileSync("./data.json")["data"]);
 }, 30000);
 
 function gen(input, blacklist = []) {
@@ -79,8 +100,8 @@ function run(input) {
         }
       }
     });
-    if(matches.length === d.length) score = 0;
-    collected.push({value: d, score});
+    // if(matches.length === d.length) score = 0;
+    collected.push({value: d.map((a, idx) => matches.includes(idx) ? `\`${a}\`` : a), score});
     // if(score > highest) {
     //   highest = score;
     //   closest = d;
@@ -90,7 +111,7 @@ function run(input) {
     // }
   });
 
-  return collected.sort((a, b) => b.score - a.score).filter(a => a.score > 0).slice(0, 5);
+  return {results: collected.sort((a, b) => b.score - a.score).filter(a => a.score > 0).slice(0, 10), totalResults: collected.filter(a => a.score > 0).length};
   
 
   // matched.forEach(m => {
@@ -106,7 +127,7 @@ function run(input) {
 }
 
 client.on("message", msg => {
-  if(msg.author.bot) return;
+  if(msg.author.bot && !msg.content.startsWith("sexdb ")) return;
   if(msg.content.toLowerCase() === "lph stats") {
     msg.reply(`
 Messages: ${data.length}
@@ -116,8 +137,10 @@ DB Size: ${Math.round((statSync("data.json").size / (1024*1024)) * 100) / 100}mb
     `);
   } else if(msg.content.toLowerCase().startsWith("lph search ")) {
     let split = msg.content.slice("lph search ".length).toLowerCase().trim().split(" ");
+    let out = run(split);
+    let a = out.results.map(a => `${a.value.join(" ")} (${a.score})`).join("\n");
 
-    msg.reply(run(split).map(a => `${a.value.join(" ")} (${a.score})`).join("\n").substring(0, 1999) + "​");
+    msg.reply(`***${out.totalResults}*** results.\n\n${a}​`.substring(0, 2000));
   } else if(msg.content.toLowerCase().startsWith("lph eval ")) {
     if(msg.author.id !== "141012665504890880") return;
     try {
@@ -125,6 +148,25 @@ DB Size: ${Math.round((statSync("data.json").size / (1024*1024)) * 100) / 100}mb
     } catch(e) {
       msg.reply("ewwor: " + e);
     }
+  } else if(msg.content.toLowerCase() === "sexdb status") {
+    msg.reply(`
+Websocket: ${states[db.ws.readyState]}
+`).then(m => {
+    let t = Date.now();
+
+    db.custom("a").catch(() => {
+      m.edit(`
+Websocket: ${states[db.ws.readyState]}
+Ping: ${Date.now() - t}ms
+`)
+    });
+    });
+  } else if(msg.content.toLowerCase().startsWith("sexdb ")) {
+    db.custom(msg.content.slice("sexdb ".length)).then(res => {
+	msg.reply(res);
+    }).catch(err => {
+	msg.reply(err);
+    });
   } else if(msg.content.toLowerCase().startsWith("lph ")) {
     let split = msg.content.slice("lph ".length).toLowerCase().trim().split(" ");
 
@@ -138,7 +180,8 @@ DB Size: ${Math.round((statSync("data.json").size / (1024*1024)) * 100) / 100}mb
     let previousIndexes = [];
     let repeats = 0;
     let blacklist = [];
-      for(let i = 0; i < Math.floor(Math.random() * 15) + 10; i++) {
+    // msg.reply(split.join(" ")).then(m => {
+      for(let i = 0; i < Math.floor(Math.random() * 10) + 8; i++) {
         let {result, dIndex, index} = gen(split, blacklist);
         if(result.length === 1 && result[0] === undefined || result.length === 0) break;
         // if(previousIndexes.includes(index) && repeats >= 2) {
@@ -154,10 +197,15 @@ DB Size: ${Math.round((statSync("data.json").size / (1024*1024)) * 100) / 100}mb
         previousDIndex = dIndex;
         result = result.filter(v => v !== undefined);
         split.push(...result);
+        // m.edit(split.join(" "));
       }
-      msg.reply(split.join(" "));
+      // m.edit(split.join(" "));
+      // });
+      
+      msg.reply(split.join(" ").substring(0, 2000));
       // msg.channel.stopTyping();
   }
+  
 });
 
 client.on("ready", () => {
